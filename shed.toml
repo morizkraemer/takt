@@ -1,0 +1,6 @@
+[scripts]
+bpm = "./venv/bin/python -u bpm.py -d 4"
+bpm-test = "./venv/bin/python -u bpm.py -d 4 --no-osc"
+bpm-rust = "cargo run --release"
+bpm-build = "cargo build --release"
+bpm-bundle = "./scripts/bundle.sh"
