@@ -32,6 +32,18 @@ jobs:
       - name: Build
         run: cargo build --release
 
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Verify no VC++ runtime dependency
+        shell: pwsh
+        run: |
+          $out = dumpbin /dependents target\release\takt.exe | Out-String
+          Write-Host $out
+          if ($out -match '(?i)(MSVCP|VCRUNTIME|CONCRT)\d+') {
+            Write-Error "takt.exe still depends on the dynamic VC++ runtime"
+            exit 1
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: takt-windows-x86_64
