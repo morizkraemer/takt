@@ -38,20 +38,60 @@ jobs:
           path: target/release/takt.exe
           if-no-files-found: error
 
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            name: arm64
+          - target: x86_64-apple-darwin
+            name: x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package .app (unsigned)
+        run: |
+          scripts/bundle.sh target/${{ matrix.target }}/release/takt dist
+          ditto -c -k --keepParent dist/takt.app takt-macos-${{ matrix.name }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: takt-macos-${{ matrix.name }}
+          path: takt-macos-${{ matrix.name }}.zip
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build-windows
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: takt-windows-x86_64
+          path: artifacts
 
       - name: Zip
-        run: zip takt-windows-x86_64.zip takt.exe
+        run: cd artifacts/takt-windows-x86_64 && zip ../takt-windows-x86_64.zip takt.exe
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: takt-windows-x86_64.zip
+          files: |
+            artifacts/takt-windows-x86_64.zip
+            artifacts/takt-macos-arm64/takt-macos-arm64.zip
+            artifacts/takt-macos-x86_64/takt-macos-x86_64.zip
