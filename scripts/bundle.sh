@@ -10,6 +10,8 @@ APP="$OUT_DIR/takt.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BINARY" "$APP/Contents/MacOS/takt"
+mkdir -p "$APP/Contents/Resources"
+cp "$(dirname "$0")/../assets/takt.icns" "$APP/Contents/Resources/takt.icns"
 
 cat > "$APP/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,6 +29,8 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleExecutable</key>
+  <string>takt</string>
+  <key>CFBundleIconFile</key>
   <string>takt</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>

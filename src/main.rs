@@ -10,7 +10,11 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([400.0, 300.0])
-            .with_title("bpm2"),
+            .with_title("bpm2")
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-256.png"))
+                    .expect("valid embedded icon"),
+            ),
         ..Default::default()
     };
     eframe::run_native(
