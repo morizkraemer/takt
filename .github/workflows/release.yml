@@ -30,7 +30,7 @@ jobs:
           cmake --version
 
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release
 
       - uses: actions/upload-artifact@v4
         with:
