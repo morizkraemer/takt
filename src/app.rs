@@ -1,16 +1,17 @@
 use eframe::egui;
 use std::sync::{Arc, Mutex};
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use crate::audio::{self, AudioDevice, AudioStream};
 use crate::detector::BpmDetector;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 enum OscMode {
     Chromatik,
     Raw,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 enum SendFormat {
     Number,
     String,
@@ -52,6 +53,35 @@ impl OscTarget {
         }
     }
 
+    fn to_settings(&self) -> TargetSettings {
+        TargetSettings {
+            mode: self.mode.clone(),
+            ip: self.ip.clone(),
+            port: self.port.clone(),
+            address: self.address.clone(),
+            send_format: self.send_format.clone(),
+            enabled: self.enabled,
+            connected: self.sender.is_some(),
+        }
+    }
+
+    fn from_settings(t: &TargetSettings) -> Self {
+        let mut target = Self {
+            mode: t.mode.clone(),
+            ip: t.ip.clone(),
+            port: t.port.clone(),
+            address: t.address.clone(),
+            send_format: t.send_format.clone(),
+            enabled: t.enabled,
+            sender: None,
+        };
+        if t.connected {
+            // Failure is silent here; the indicator simply stays off.
+            let _ = target.connect();
+        }
+        target
+    }
+
     fn connect(&mut self) -> Result<(), String> {
         if !self.enabled {
             self.sender = None;
@@ -67,6 +97,53 @@ impl OscTarget {
                 self.sender = None;
                 Err(e)
             }
+        }
+    }
+}
+
+/// Persisted form of an OSC target (runtime sender is rebuilt on restore).
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
+struct TargetSettings {
+    mode: OscMode,
+    ip: String,
+    port: String,
+    address: String,
+    send_format: SendFormat,
+    enabled: bool,
+    /// Was connected when the settings were saved.
+    connected: bool,
+}
+
+impl Default for TargetSettings {
+    fn default() -> Self {
+        OscTarget::chromatik().to_settings()
+    }
+}
+
+/// Everything the user can set; restored on next launch.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
+struct Settings {
+    audio_device: Option<String>,
+    bpm_min: f64,
+    bpm_max: f64,
+    targets: Vec<TargetSettings>,
+    osc_in_enabled: bool,
+    osc_in_port: String,
+    link_enabled: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            audio_device: None,
+            bpm_min: 120.0,
+            bpm_max: 150.0,
+            targets: vec![OscTarget::chromatik().to_settings()],
+            osc_in_enabled: false,
+            osc_in_port: "9001".to_string(),
+            link_enabled: false,
         }
     }
 }
@@ -106,35 +183,85 @@ pub struct BpmApp {
 }
 
 impl BpmApp {
-    pub fn new() -> Self {
+    pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
+        let settings: Settings = storage
+            .and_then(|st| eframe::get_value(st, eframe::APP_KEY))
+            .unwrap_or_default();
+
         let devices = audio::list_input_devices();
-        let default_targets = vec![OscTarget::chromatik()];
-        let n_targets = default_targets.len();
+        // Restore device by name; silently fall back to default if missing.
+        let selected_device = settings
+            .audio_device
+            .as_ref()
+            .and_then(|name| devices.iter().find(|d| &d.name == name))
+            .map(|d| d.index);
+
+        let (bpm_min, bpm_max) = if settings.bpm_min >= 60.0
+            && settings.bpm_max <= 200.0
+            && settings.bpm_min < settings.bpm_max
+        {
+            (settings.bpm_min, settings.bpm_max)
+        } else {
+            (120.0, 150.0)
+        };
+
+        let osc_targets: Vec<OscTarget> = if settings.targets.is_empty() {
+            vec![OscTarget::chromatik()]
+        } else {
+            settings.targets.iter().map(OscTarget::from_settings).collect()
+        };
+        let n_targets = osc_targets.len();
+
         let mut app = Self {
             devices,
-            selected_device: None,
+            selected_device,
             sample_buffer: Arc::new(Mutex::new(Vec::new())),
             stream: None,
-            detector: BpmDetector::new(120.0, 150.0),
+            detector: BpmDetector::new(bpm_min, bpm_max),
             error: None,
-            bpm_min: 120.0,
-            bpm_max: 150.0,
+            bpm_min,
+            bpm_max,
             last_estimate: Instant::now(),
             link: crate::link::LinkSession::new(),
             link_enabled: false,
-            osc_targets: default_targets,
+            osc_targets,
             beat_phases: vec![0.0; n_targets],
             beat_in_bars: vec![1; n_targets],
             last_bpms: vec![0.0; n_targets],
             last_process: Instant::now(),
             osc_in_enabled: false,
-            osc_in_port: "9001".to_string(),
+            osc_in_port: settings.osc_in_port.clone(),
             osc_in_receiver: None,
             osc_in_listener: None,
             osc_reset_flash: None,
         };
         app.start_stream();
+
+        if settings.link_enabled {
+            app.link_enabled = true;
+            app.link.set_enabled(true);
+        }
+        // Single bind at startup; listener is only started here, once.
+        if settings.osc_in_enabled {
+            app.osc_in_enabled = true;
+            app.start_osc_listener();
+        }
         app
+    }
+
+    fn to_settings(&self) -> Settings {
+        Settings {
+            audio_device: self
+                .selected_device
+                .and_then(|i| self.devices.iter().find(|d| d.index == i))
+                .map(|d| d.name.clone()),
+            bpm_min: self.bpm_min,
+            bpm_max: self.bpm_max,
+            targets: self.osc_targets.iter().map(OscTarget::to_settings).collect(),
+            osc_in_enabled: self.osc_in_enabled,
+            osc_in_port: self.osc_in_port.clone(),
+            link_enabled: self.link_enabled,
+        }
     }
 
     fn start_stream(&mut self) {
@@ -280,6 +407,14 @@ impl BpmApp {
 }
 
 impl eframe::App for BpmApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, &self.to_settings());
+    }
+
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(10)
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.process_osc_input();
         self.process_audio();

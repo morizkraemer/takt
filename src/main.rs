@@ -15,11 +15,12 @@ fn main() -> eframe::Result {
                 eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-256.png"))
                     .expect("valid embedded icon"),
             ),
+        persist_window: true,
         ..Default::default()
     };
     eframe::run_native(
-        "bpm2",
+        "takt",
         options,
-        Box::new(|_cc| Ok(Box::new(app::BpmApp::new()))),
+        Box::new(|cc| Ok(Box::new(app::BpmApp::new(cc.storage)))),
     )
 }

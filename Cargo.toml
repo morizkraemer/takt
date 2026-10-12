@@ -6,7 +6,8 @@ edition = "2024"
 [dependencies]
 cpal = "0.15"
 rustfft = "6"
-eframe = "0.31"
+eframe = { version = "0.31", features = ["persistence"] }
+serde = { version = "1", features = ["derive"] }
 rosc = "0.10"
 rusty_link = "0.4"
 
