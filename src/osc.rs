@@ -1,8 +1,10 @@
 use rosc::{encoder, OscMessage, OscPacket, OscType};
 use std::net::UdpSocket;
+use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct OscSender {
-    socket: UdpSocket,
+    socket: Arc<UdpSocket>,
     target: String,
 }
 
@@ -10,7 +12,7 @@ impl OscSender {
     pub fn new(ip: &str, port: u16) -> Result<Self, String> {
         let socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| e.to_string())?;
         Ok(Self {
-            socket,
+            socket: Arc::new(socket),
             target: format!("{ip}:{port}"),
         })
     }
@@ -43,5 +45,76 @@ impl OscSender {
     /// Raw mode: send BPM to a custom address
     pub fn send_bpm_raw(&self, address: &str, bpm: f64) {
         self.send(address, vec![OscType::Float(bpm as f32)]);
+    }
+
+    /// Send a string to an address
+    pub fn send_string(&self, address: &str, value: &str) {
+        self.send(address, vec![OscType::String(value.to_string())]);
+    }
+}
+
+/// OSC input listener — receives incoming messages and signals resets.
+pub struct OscReceiver {
+    _thread: std::thread::JoinHandle<()>,
+}
+
+/// Commands that can come in via OSC.
+#[derive(Debug, Clone)]
+pub enum OscCommand {
+    Reset,
+}
+
+fn handle_packet(packet: &OscPacket, tx: &std::sync::mpsc::Sender<OscCommand>) {
+    match packet {
+        OscPacket::Message(msg) => {
+            match msg.addr.as_str() {
+                "/takt/reset" | "/bpm/reset" => {
+                    let _ = tx.send(OscCommand::Reset);
+                }
+                other => {
+                    eprintln!("[osc-in] unhandled: {other}");
+                }
+            }
+        }
+        OscPacket::Bundle(bundle) => {
+            for p in &bundle.content {
+                handle_packet(p, tx);
+            }
+        }
+    }
+}
+
+impl OscReceiver {
+    /// Start listening on `port`. Returns a receiver channel for incoming commands.
+    pub fn new(port: u16) -> Result<(Self, std::sync::mpsc::Receiver<OscCommand>), String> {
+        let socket = UdpSocket::bind(("0.0.0.0", port)).map_err(|e| format!("OSC listen bind: {e}"))?;
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        let thread = std::thread::Builder::new()
+            .name("osc-listen".into())
+            .spawn(move || {
+                let mut buf = [0u8; 65535];
+                loop {
+                    match socket.recv_from(&mut buf) {
+                        Ok((size, _addr)) => {
+                            match rosc::decoder::decode_udp(&buf[..size]) {
+                                Ok((_rest, packet)) => {
+                                    handle_packet(&packet, &tx);
+                                }
+                                Err(e) => {
+                                    eprintln!("[osc-in] decode error: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[osc-in] recv error: {e}");
+                            break;
+                        }
+                    }
+                }
+            })
+            .map_err(|e| format!("OSC listen thread: {e}"))?;
+
+        Ok((Self { _thread: thread }, rx))
     }
 }
