@@ -241,6 +241,16 @@ impl BpmDetector {
         self.current_bpm
     }
 
+    /// Reset all internal state — clear buffers and return BPM to 0.
+    pub fn reset(&mut self) {
+        self.energy_history = vec![0.0; HISTORY_LEN];
+        self.hist_idx = 0;
+        self.hist_filled = false;
+        self.sample_buf.clear();
+        self.prev_spectrum = None;
+        self.current_bpm = 0.0;
+    }
+
     pub fn buffer_fill(&self) -> (usize, usize) {
         let fill = if self.hist_filled {
             HISTORY_LEN
