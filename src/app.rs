@@ -420,7 +420,7 @@ impl eframe::App for BpmApp {
         self.process_audio();
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("bpm2");
+            ui.heading("takt");
             ui.add_space(8.0);
 
             // BPM display — large
