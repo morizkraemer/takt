@@ -28,6 +28,19 @@ Real-time BPM detection from a live audio stream. Available as a standalone Rust
 | Ableton Link | `rusty_link` |
 | OSC | `rosc` |
 
+## Download
+
+Builds are published on the [GitHub Releases page](https://github.com/morizkraemer/takt/releases) as:
+
+- `takt-windows-x86_64.zip` (Windows)
+- `takt-macos-arm64.zip` (macOS, Apple Silicon)
+- `takt-macos-x86_64.zip` (macOS, Intel)
+
+The macOS builds are unsigned, so on first launch right-click `takt.app` and choose Open.
+
+- **Cut a release:** push a version tag, e.g. `git tag v0.1.0 && git push origin v0.1.0`. The workflow builds the Windows and macOS apps and attaches all three builds to a new release.
+- **Every push** also builds the app; download `takt-windows-x86_64`, `takt-macos-arm64` or `takt-macos-x86_64` from the artifacts of the run on the repository's Actions tab.
+
 ## Setup
 
 ```bash

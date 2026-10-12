@@ -9,3 +9,6 @@ rustfft = "6"
 eframe = "0.31"
 rosc = "0.10"
 rusty_link = "0.4"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

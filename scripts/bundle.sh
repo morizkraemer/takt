@@ -1,15 +1,17 @@
 #!/bin/bash
+# Wrap a built takt binary in a macOS .app bundle.
+# Usage: scripts/bundle.sh [path/to/takt-binary] [output-dir]
 set -e
 
-BINARY="target/release/bpm2"
-APP="$BINARY.app"
+BINARY="${1:-target/release/takt}"
+OUT_DIR="${2:-$(dirname "$BINARY")}"
+APP="$OUT_DIR/takt.app"
 
-echo "Building release..."
-cargo build --release
-
-echo "Creating app bundle..."
+rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-cp "$BINARY" "$APP/Contents/MacOS/bpm2"
+cp "$BINARY" "$APP/Contents/MacOS/takt"
+mkdir -p "$APP/Contents/Resources"
+cp "$(dirname "$0")/../assets/takt.icns" "$APP/Contents/Resources/takt.icns"
 
 cat > "$APP/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -17,24 +19,27 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>bpm2</string>
+  <string>takt</string>
   <key>CFBundleDisplayName</key>
-  <string>bpm2</string>
+  <string>takt</string>
   <key>CFBundleIdentifier</key>
-  <string>com.tanzverein.bpm2</string>
+  <string>com.tanzverein.takt</string>
   <key>CFBundleVersion</key>
   <string>0.1.0</string>
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleExecutable</key>
-  <string>bpm2</string>
+  <string>takt</string>
+  <key>CFBundleIconFile</key>
+  <string>takt</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>bpm2 needs access to your audio input to detect BPM.</string>
+  <string>takt needs access to your audio input to detect BPM.</string>
 </dict>
 </plist>
 PLIST
 
 echo "Bundle created at $APP"
-ls -lh "$APP/Contents/MacOS/bpm2"
