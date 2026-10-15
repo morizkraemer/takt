@@ -154,6 +154,7 @@ pub struct BpmApp {
     sample_buffer: Arc<Mutex<Vec<f32>>>,
     stream: Option<AudioStream>,
     detector: BpmDetector,
+    sample_rate: f64,
     error: Option<String>,
     bpm_min: f64,
     bpm_max: f64,
@@ -217,7 +218,8 @@ impl BpmApp {
             selected_device,
             sample_buffer: Arc::new(Mutex::new(Vec::new())),
             stream: None,
-            detector: BpmDetector::new(bpm_min, bpm_max),
+            detector: BpmDetector::new(bpm_min, bpm_max, 44100.0),
+            sample_rate: 44100.0,
             error: None,
             bpm_min,
             bpm_max,
@@ -267,7 +269,11 @@ impl BpmApp {
     fn start_stream(&mut self) {
         self.error = None;
         match AudioStream::new(self.selected_device, self.sample_buffer.clone()) {
-            Ok(s) => self.stream = Some(s),
+            Ok(s) => {
+                self.sample_rate = s.sample_rate() as f64;
+                self.detector = BpmDetector::new(self.bpm_min, self.bpm_max, self.sample_rate);
+                self.stream = Some(s);
+            }
             Err(e) => self.error = Some(e),
         }
     }
@@ -310,6 +316,9 @@ impl BpmApp {
     }
 
     fn process_audio(&mut self) {
+        if let Some(err) = self.stream.as_ref().and_then(|s| s.take_error()) {
+            self.error = Some(err);
+        }
         // Drain sample buffer into detector
         let samples: Vec<f32> = {
             let mut buf = self.sample_buffer.lock().unwrap();
@@ -531,7 +540,7 @@ impl eframe::App for BpmApp {
                     self.bpm_min = min as f64;
                     self.bpm_max = max as f64;
                     let current_bpm = self.detector.current_bpm();
-                    self.detector = BpmDetector::new(self.bpm_min, self.bpm_max);
+                    self.detector = BpmDetector::new(self.bpm_min, self.bpm_max, self.sample_rate);
                     // Preserve the last BPM estimate
                     if current_bpm > 0.0 {
                         self.detector.reset();

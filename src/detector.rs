@@ -1,14 +1,13 @@
 use rustfft::num_complex::Complex;
 use std::f64::consts::PI;
 
-const SAMPLE_RATE: f64 = 44100.0;
 const FRAME_SIZE: usize = 1024;
 const HOP_SIZE: usize = 128;
 const HISTORY_SECONDS: f64 = 30.0;
-const ONSET_FPS: f64 = SAMPLE_RATE / HOP_SIZE as f64;
-const HISTORY_LEN: usize = (HISTORY_SECONDS * ONSET_FPS) as usize;
 
 pub struct BpmDetector {
+    onset_fps: f64,
+    history_len: usize,
     bpm_min: f64,
     bpm_max: f64,
     lag_min: usize,
@@ -37,8 +36,10 @@ pub struct BpmDetector {
 }
 
 impl BpmDetector {
-    pub fn new(bpm_min: f64, bpm_max: f64) -> Self {
-        let freq_per_bin = SAMPLE_RATE / FRAME_SIZE as f64;
+    pub fn new(bpm_min: f64, bpm_max: f64, sample_rate: f64) -> Self {
+        let onset_fps = sample_rate / HOP_SIZE as f64;
+        let history_len = (HISTORY_SECONDS * onset_fps) as usize;
+        let freq_per_bin = sample_rate / FRAME_SIZE as f64;
         let lo_bin = (40.0 / freq_per_bin) as usize;
         let lo_bin = lo_bin.max(1);
         let hi_bin = (200.0 / freq_per_bin) as usize;
@@ -51,12 +52,14 @@ impl BpmDetector {
             .collect();
 
         Self {
+            onset_fps,
+            history_len,
             bpm_min,
             bpm_max,
-            lag_min: (ONSET_FPS * 60.0 / bpm_max) as usize,
-            lag_max: (ONSET_FPS * 60.0 / bpm_min) as usize,
+            lag_min: (onset_fps * 60.0 / bpm_max) as usize,
+            lag_max: (onset_fps * 60.0 / bpm_min) as usize,
             prev_spectrum: None,
-            energy_history: vec![0.0; HISTORY_LEN],
+            energy_history: vec![0.0; history_len],
             hist_idx: 0,
             hist_filled: false,
             sample_buf: Vec::new(),
@@ -77,7 +80,7 @@ impl BpmDetector {
 
             let energy = self.process_frame(&frame);
             self.energy_history[self.hist_idx] = energy;
-            self.hist_idx = (self.hist_idx + 1) % HISTORY_LEN;
+            self.hist_idx = (self.hist_idx + 1) % self.history_len;
             if self.hist_idx == 0 {
                 self.hist_filled = true;
             }
@@ -113,7 +116,7 @@ impl BpmDetector {
 
     /// Run tempo estimation. Call this periodically (e.g. 4x/sec).
     pub fn estimate_tempo(&mut self) -> f64 {
-        let min_samples = (4.0 * ONSET_FPS) as usize;
+        let min_samples = (4.0 * self.onset_fps) as usize;
         if !self.hist_filled && self.hist_idx < min_samples {
             return 0.0;
         }
@@ -162,7 +165,7 @@ impl BpmDetector {
         }
 
         let coarse_lag = peak_idx + lag_min;
-        let coarse_bpm = 60.0 * ONSET_FPS / coarse_lag as f64;
+        let coarse_bpm = 60.0 * self.onset_fps / coarse_lag as f64;
 
         // Fine DFT search: ±1 BPM in 0.05 steps
         let mut best_bpm = coarse_bpm;
@@ -170,7 +173,7 @@ impl BpmDetector {
 
         let mut test_bpm = (coarse_bpm - 1.0).max(self.bpm_min);
         while test_bpm <= (coarse_bpm + 1.0).min(self.bpm_max) {
-            let freq = test_bpm / (60.0 * ONSET_FPS);
+            let freq = test_bpm / (60.0 * self.onset_fps);
             // Selective DFT at this frequency
             let mut re = 0.0;
             let mut im = 0.0;
@@ -243,7 +246,7 @@ impl BpmDetector {
 
     /// Reset all internal state — clear buffers and return BPM to 0.
     pub fn reset(&mut self) {
-        self.energy_history = vec![0.0; HISTORY_LEN];
+        self.energy_history = vec![0.0; self.history_len];
         self.hist_idx = 0;
         self.hist_filled = false;
         self.sample_buf.clear();
@@ -253,11 +256,11 @@ impl BpmDetector {
 
     pub fn buffer_fill(&self) -> (usize, usize) {
         let fill = if self.hist_filled {
-            HISTORY_LEN
+            self.history_len
         } else {
             self.hist_idx
         };
-        (fill, HISTORY_LEN)
+        (fill, self.history_len)
     }
 }
 
